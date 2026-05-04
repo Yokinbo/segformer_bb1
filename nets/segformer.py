@@ -83,8 +83,16 @@ class SegFormerHead(nn.Module):
         return x
 
 class SegFormer(nn.Module):
-    def __init__(self, num_classes = 21, phi = 'b0', pretrained = False):
+    def __init__(self, num_classes = 21, phi = 'b0', pretrained = False, in_channels = 3):
         super(SegFormer, self).__init__()
+        # in_channels 控制输入影像通道数：
+        # - 普通 RGB 语义分割：3
+        # - Sentinel-2 四波段实验：[B2, B3, B4, B8]，即 4
+        # - Sentinel-2 六波段实验：[B2, B3, B4, B8, B11, B12]，即 6
+        #
+        # 这里只改变第一层 patch embedding 的输入通道数，SegFormer 的 MiT 主干层级、
+        # MLP decoder 和输出结构都保持原来的标准 SegFormer 设计。
+        self.input_channels = in_channels
         self.in_channels = {
             'b0': [32, 64, 160, 256], 'b1': [64, 128, 320, 512], 'b2': [64, 128, 320, 512],
             'b3': [64, 128, 320, 512], 'b4': [64, 128, 320, 512], 'b5': [64, 128, 320, 512],
@@ -92,7 +100,7 @@ class SegFormer(nn.Module):
         self.backbone   = {
             'b0': mit_b0, 'b1': mit_b1, 'b2': mit_b2,
             'b3': mit_b3, 'b4': mit_b4, 'b5': mit_b5,
-        }[phi](pretrained)
+        }[phi](pretrained, in_channels=in_channels)
         self.embedding_dim   = {
             'b0': 256, 'b1': 256, 'b2': 768,
             'b3': 768, 'b4': 768, 'b5': 768,

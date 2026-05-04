@@ -60,9 +60,64 @@ def worker_init_fn(worker_id, rank, seed):
     np.random.seed(worker_seed)
     torch.manual_seed(worker_seed)
 
-def preprocess_input(image):
-    image -= np.array([123.675, 116.28, 103.53], np.float32)
-    image /= np.array([58.395, 57.12, 57.375], np.float32)
+def _reshape_band_vector(values, channels, name):
+    """
+    将按波段配置的一维参数整理成 (1, 1, C)，方便和 HWC 影像广播运算。
+
+    多光谱标准化要求每个通道都有自己的 clip / mean / std，因此这里会检查
+    参数长度是否与当前输入通道数一致，避免 4 波段、6 波段配置混用。
+    """
+    arr = np.array(values, np.float32)
+    if arr.ndim != 1 or arr.shape[0] != channels:
+        raise ValueError(
+            "{} 的长度应与输入通道数一致，当前通道数={}，配置长度={}。".format(
+                name, channels, arr.shape[0] if arr.ndim == 1 else arr.shape
+            )
+        )
+    return arr.reshape((1, 1, channels))
+
+def preprocess_input(image, is_multispectral=False):
+    """
+    输入影像标准化。
+
+    普通 RGB：
+        沿用原 SegFormer 仓库的 ImageNet 标准化：
+        (image - mean) / std，其中 image 是 0-255 的 RGB 数组。
+
+    多光谱 tif：
+        使用 multispectral_config.py 中的 normalization_config：
+        1. 先除以 reflectance_scale，通常 Sentinel-2 为 /10000；
+        2. 可选按波段 clip，压制异常亮/暗像元；
+        3. 可选按波段 mean/std 标准化。
+
+    为什么需要 is_multispectral：
+        三波段 tif 的形状也是 HWC=3，单靠通道数无法判断它是普通 RGB jpg，
+        还是 Sentinel-2 的 [B4, B3, B2]。因此 dataloader / 推理脚本应在读取
+        tif 时显式传入 is_multispectral=True。
+    """
+    image = np.array(image, np.float32)
+
+    if not is_multispectral:
+        image -= np.array([123.675, 116.28, 103.53], np.float32)
+        image /= np.array([58.395, 57.12, 57.375], np.float32)
+        return image
+
+    from multispectral_config import normalization_config
+
+    channels = image.shape[2] if image.ndim == 3 else 1
+    reflectance_scale = float(normalization_config.get("reflectance_scale", 10000.0))
+    image = image / reflectance_scale
+
+    if normalization_config.get("enable_clip", False):
+        clip_min = _reshape_band_vector(normalization_config.get("clip_min"), channels, "clip_min")
+        clip_max = _reshape_band_vector(normalization_config.get("clip_max"), channels, "clip_max")
+        image = np.clip(image, clip_min, clip_max)
+
+    if normalization_config.get("enable_mean_std", False):
+        mean = _reshape_band_vector(normalization_config.get("mean"), channels, "mean")
+        std = _reshape_band_vector(normalization_config.get("std"), channels, "std")
+        image = (image - mean) / (std + 1e-8)
+
     return image
 
 def show_config(**kwargs):

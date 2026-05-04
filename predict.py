@@ -31,8 +31,7 @@ if __name__ == "__main__":
     #   count、name_classes仅在mode='predict'时有效
     #-------------------------------------------------------------------------#
     count           = False
-    name_classes    = ["background","aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat", "chair", "cow", "diningtable", "dog", "horse", "motorbike", "person", "pottedplant", "sheep", "sofa", "train", "tvmonitor"]
-    # name_classes    = ["background","cat","dog"]
+    name_classes    = ["background", "photovoltaic"]
     #----------------------------------------------------------------------------------------------------------#
     #   video_path          用于指定视频的路径，当video_path=0时表示检测摄像头
     #                       想要检测视频，则设置如video_path = "xxx.mp4"即可，代表读取出根目录下的xxx.mp4文件。
@@ -86,7 +85,7 @@ if __name__ == "__main__":
         while True:
             img = input('Input image filename:')
             try:
-                image = Image.open(img)
+                image = segformer.open_image(img)
             except:
                 print('Open Error! Try again!')
                 continue
@@ -153,7 +152,7 @@ if __name__ == "__main__":
         for img_name in tqdm(img_names):
             if img_name.lower().endswith(('.bmp', '.dib', '.png', '.jpg', '.jpeg', '.pbm', '.pgm', '.ppm', '.tif', '.tiff')):
                 image_path  = os.path.join(dir_origin_path, img_name)
-                image       = Image.open(image_path)
+                image       = segformer.open_image(image_path)
                 r_image     = segformer.detect_image(image)
                 if not os.path.exists(dir_save_path):
                     os.makedirs(dir_save_path)
