@@ -7,6 +7,7 @@ import torch
 from PIL import Image
 from torch.utils.data.dataset import Dataset
 
+from multispectral_config import normalization_config
 from utils.utils import cvtColor, preprocess_input
 
 
@@ -20,6 +21,7 @@ class SegmentationDataset(Dataset):
         dataset_path,
         image_ext=".jpg",
         selected_bands=None,
+        augmentation_config=None,
     ):
         super(SegmentationDataset, self).__init__()
         self.annotation_lines   = annotation_lines
@@ -40,6 +42,7 @@ class SegmentationDataset(Dataset):
         # - [3, 2, 1] 表示真彩色 RGB 对比实验 [B4, B3, B2]；
         # - [1, 2, 3, 4, 5, 6] 表示完整六波段实验。
         self.selected_bands     = selected_bands
+        self.augmentation_config = augmentation_config or {"enabled": False}
 
     def __len__(self):
         return self.length
@@ -57,7 +60,11 @@ class SegmentationDataset(Dataset):
             image = Image.open(image_path)
         label = Image.open(label_path)
 
-        image, label = self.get_random_data(image, label, self.input_shape, random=self.train)
+        is_multispectral = self.image_ext.lower() in [".tif", ".tiff"]
+        if self._use_training_augmentation(image):
+            image, label = self.get_multispectral_training_data(image, label, self.input_shape)
+        else:
+            image, label = self.get_random_data(image, label, self.input_shape, random=self.train)
 
         # 统一转换成 HWC numpy，再交给 preprocess_input。
         # 现在这一阶段先保证多光谱维度能进训练管线；下一步会改 preprocess_input，
@@ -66,7 +73,6 @@ class SegmentationDataset(Dataset):
         if len(np.shape(image)) == 2:
             image = np.expand_dims(image, -1)
 
-        is_multispectral = self.image_ext.lower() in [".tif", ".tiff"]
         image = np.transpose(preprocess_input(image, is_multispectral=is_multispectral), [2, 0, 1])
         label = np.array(label)
         label[label >= self.num_classes] = self.num_classes
@@ -97,6 +103,118 @@ class SegmentationDataset(Dataset):
 
     def rand(self, a=0, b=1):
         return np.random.rand() * (b - a) + a
+
+    def _use_training_augmentation(self, image):
+        return (
+            self.train
+            and self.augmentation_config.get("enabled", False)
+            and self.image_ext.lower() in [".tif", ".tiff"]
+            and isinstance(image, np.ndarray)
+            and image.ndim == 3
+        )
+
+    def _to_reflectance(self, image):
+        scale = float(normalization_config.get("reflectance_scale", 1.0))
+        if scale <= 0:
+            raise ValueError("normalization_config['reflectance_scale'] must be greater than 0.")
+        return image.astype(np.float32, copy=True) / scale
+
+    def _from_reflectance(self, image):
+        scale = float(normalization_config.get("reflectance_scale", 1.0))
+        return (image.astype(np.float32, copy=False) * scale).astype(np.float32)
+
+    def get_multispectral_training_data(self, image, label, input_shape):
+        target = np.array(label, dtype=np.uint8)
+        reflectance = self._to_reflectance(image)
+        reflectance, target = self._augment_training_sample(reflectance, target)
+
+        h, w = input_shape
+        image = self._from_reflectance(reflectance)
+        image, nw, nh = self.resize_image(image, (w, h))
+
+        label = Image.fromarray(target).resize((nw, nh), Image.NEAREST)
+        new_label = Image.new("L", [w, h], 0)
+        new_label.paste(label, ((w - nw) // 2, (h - nh) // 2))
+        return image, new_label
+
+    def _augment_training_sample(self, image, target):
+        cfg = self.augmentation_config
+
+        if self.rand() < cfg.get("geometry_prob", 0.0):
+            image, target = self._augment_geometry(image, target)
+
+        if self.rand() < cfg.get("scale_prob", 0.0):
+            image, target = self._augment_random_scale(image, target)
+
+        if self.rand() < cfg.get("reflectance_prob", 0.0):
+            image = self._augment_reflectance(image)
+
+        if self.rand() < cfg.get("shadow_prob", 0.0):
+            image = self._augment_shadow(image)
+
+        if self.rand() < cfg.get("noise_prob", 0.0):
+            image = self._augment_noise(image)
+
+        return image.astype(np.float32), target.astype(np.uint8)
+
+    def _augment_geometry(self, image, target):
+        op = np.random.choice(["hflip", "vflip", "rot90", "rot180", "rot270"])
+        if op == "hflip":
+            return np.ascontiguousarray(image[:, ::-1, :]), np.ascontiguousarray(target[:, ::-1])
+        if op == "vflip":
+            return np.ascontiguousarray(image[::-1, :, :]), np.ascontiguousarray(target[::-1, :])
+        k = {"rot90": 1, "rot180": 2, "rot270": 3}[op]
+        return np.rot90(image, k=k).copy(), np.rot90(target, k=k).copy()
+
+    def _augment_reflectance(self, image):
+        cfg = self.augmentation_config
+        global_low, global_high = cfg.get("reflectance_global_range", [0.90, 1.10])
+        band_low, band_high = cfg.get("reflectance_band_range", [0.95, 1.05])
+        global_factor = self.rand(global_low, global_high)
+        band_factors = np.random.uniform(
+            band_low,
+            band_high,
+            size=(1, 1, image.shape[2]),
+        ).astype(np.float32)
+        return image * global_factor * band_factors
+
+    def _augment_shadow(self, image):
+        cfg = self.augmentation_config
+        factor_low, factor_high = cfg.get("shadow_factor_range", [0.75, 0.90])
+        radius_low, radius_high = cfg.get("shadow_radius_range", [0.25, 0.45])
+        h, w = image.shape[:2]
+        center_y = self.rand(-0.5, 0.5)
+        center_x = self.rand(-0.5, 0.5)
+        radius = self.rand(radius_low, radius_high)
+        yy = np.linspace(-1, 1, h, dtype=np.float32)[:, None]
+        xx = np.linspace(-1, 1, w, dtype=np.float32)[None, :]
+        shadow = np.exp(-((xx - center_x) ** 2 + (yy - center_y) ** 2) / max(radius, 1e-6))
+        factor = self.rand(factor_low, factor_high)
+        shadow_map = 1.0 - (1.0 - factor) * shadow
+        return image * shadow_map[:, :, None]
+
+    def _augment_noise(self, image):
+        sigma_low, sigma_high = self.augmentation_config.get("noise_sigma_range", [0.003, 0.008])
+        sigma = self.rand(sigma_low, sigma_high)
+        noise = np.random.normal(0.0, sigma, size=image.shape).astype(np.float32)
+        return image + noise
+
+    def _augment_random_scale(self, image, target):
+        crop_low, crop_high = self.augmentation_config.get("scale_crop_range", [0.85, 1.00])
+        ratio = self.rand(crop_low, crop_high)
+        h, w = image.shape[:2]
+        crop_h = max(8, int(h * ratio))
+        crop_w = max(8, int(w * ratio))
+        top = np.random.randint(0, max(0, h - crop_h) + 1)
+        left = np.random.randint(0, max(0, w - crop_w) + 1)
+
+        image_crop = image[top:top + crop_h, left:left + crop_w, :]
+        target_crop = target[top:top + crop_h, left:left + crop_w]
+        image = cv2.resize(image_crop, (w, h), interpolation=cv2.INTER_LINEAR)
+        target = cv2.resize(target_crop, (w, h), interpolation=cv2.INTER_NEAREST)
+        if image.ndim == 2:
+            image = image[:, :, None]
+        return image.astype(np.float32), target.astype(np.uint8)
 
     def get_image_size(self, image):
         if isinstance(image, Image.Image):

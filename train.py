@@ -10,7 +10,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 
 from multispectral_config import (band_mode, image_ext, in_channels,
-                                  normalization_config, selected_bands)
+                                  normalization_config, selected_bands,
+                                  train_augmentation_config)
 from nets.segformer import SegFormer
 from nets.segformer_training import (get_lr_scheduler, set_optimizer_lr,
                                      weights_init)
@@ -373,7 +374,7 @@ if __name__ == "__main__":
     if local_rank == 0:
         show_config(
             num_classes = num_classes, phi = phi, model_path = model_path, input_shape = input_shape, \
-            band_mode = band_mode, image_ext = image_ext, selected_bands = selected_bands, in_channels = in_channels, normalization_config = normalization_config, \
+            band_mode = band_mode, image_ext = image_ext, selected_bands = selected_bands, in_channels = in_channels, normalization_config = normalization_config, train_augmentation_config = train_augmentation_config, \
             Init_Epoch = Init_Epoch, Freeze_Epoch = Freeze_Epoch, UnFreeze_Epoch = UnFreeze_Epoch, Freeze_batch_size = Freeze_batch_size, Unfreeze_batch_size = Unfreeze_batch_size, Freeze_Train = Freeze_Train, \
             Init_lr = Init_lr, Min_lr = Min_lr, optimizer_type = optimizer_type, momentum = momentum, lr_decay_type = lr_decay_type, \
             save_period = save_period, save_dir = save_dir, num_workers = num_workers, num_train = num_train, num_val = num_val
@@ -448,7 +449,7 @@ if __name__ == "__main__":
         if epoch_step == 0 or epoch_step_val == 0:
             raise ValueError("数据集过小，无法继续进行训练，请扩充数据集。")
         
-        train_dataset   = SegmentationDataset(train_lines, input_shape, num_classes, True, VOCdevkit_path, image_ext=image_ext, selected_bands=selected_bands)
+        train_dataset   = SegmentationDataset(train_lines, input_shape, num_classes, True, VOCdevkit_path, image_ext=image_ext, selected_bands=selected_bands, augmentation_config=train_augmentation_config)
         val_dataset     = SegmentationDataset(val_lines, input_shape, num_classes, False, VOCdevkit_path, image_ext=image_ext, selected_bands=selected_bands)
     
         if distributed:

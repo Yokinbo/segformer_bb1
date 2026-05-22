@@ -46,7 +46,7 @@ image_ext = ".tif"
 # 这里的波段编号使用 1-based 编号，也就是 rasterio 读取 tif 时的波段编号习惯。
 # 假设你的 tif 内部波段顺序固定为：
 # [1, 2, 3, 4, 5, 6] = [B2, B3, B4, B8, B11, B12]
-band_mode = "4band"
+band_mode = "6band"
 
 band_options = {
     # 真彩色 RGB。因为原始 tif 顺序是 [B2, B3, B4, B8, B11, B12]，
@@ -116,6 +116,37 @@ normalization_configs = {
         "mean": [0.076092, 0.108342, 0.130562, 0.243092, 0.284875, 0.234912],
         "std": [0.034616, 0.038353, 0.053213, 0.058950, 0.059411, 0.065606],
     },
+}
+
+# -------------------------------------------------------------------------
+# Training-time online data augmentation
+# -------------------------------------------------------------------------
+# Keep this block aligned with the U2Net multispectral experiments so model
+# comparisons use the same augmentation policy. These augmentations are used
+# only for the training split; validation and test samples stay unchanged.
+train_augmentation_config = {
+    "enabled": True,
+
+    # Multispectral reflectance perturbation.
+    "reflectance_prob": 0.50,
+    "reflectance_global_range": [0.90, 1.10],
+    "reflectance_band_range": [0.95, 1.05],
+
+    # Geometry perturbation.
+    "geometry_prob": 0.50,
+
+    # Soft local shadow / thin cloud-shadow perturbation.
+    "shadow_prob": 0.25,
+    "shadow_factor_range": [0.75, 0.90],
+    "shadow_radius_range": [0.25, 0.45],
+
+    # Mild Gaussian noise in reflectance units.
+    "noise_prob": 0.25,
+    "noise_sigma_range": [0.003, 0.008],
+
+    # Random scale by crop and resize back.
+    "scale_prob": 0.20,
+    "scale_crop_range": [0.85, 1.00],
 }
 
 # 当前波段模式对应的标准化配置。
