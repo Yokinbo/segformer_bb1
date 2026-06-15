@@ -10,7 +10,7 @@ model_data/
 .temp_miou_out/
 miou_out_multispectral/
 .vscode/
-
+论文制图/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

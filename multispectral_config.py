@@ -16,7 +16,7 @@ utils/dataloader.py 和 utils/utils.py 中逐步接入这些配置。
 # -------------------------------------------------------------------------
 # 训练完成后的权重路径，后续主要给 predict.py / get_miou.py / segformer.py 推理使用。
 # 第一阶段只是放一个默认占位路径；真正训练完成后，可以改成 logs 下的 best_epoch_weights.pth。
-trained_model_path = "logs\\4band\\best_epoch_weights.pth"
+trained_model_path = "logs/6band/best_epoch_weights.pth"
 
 # -------------------------------------------------------------------------
 # 输入影像格式

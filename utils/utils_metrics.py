@@ -145,7 +145,7 @@ def draw_plot_func(values, name_classes, plot_title, x_label, output_path, tick_
     for i, val in enumerate(values):
         str_val = " " + str(val) 
         if val < 1.0:
-            str_val = " {0:.2f}".format(val)
+            str_val = " {0:.3f}".format(val)
         t = plt.text(val, i, str_val, color='royalblue', va='center', fontweight='bold')
         if i == (len(values)-1):
             adjust_axes(r, t, fig, axes)
