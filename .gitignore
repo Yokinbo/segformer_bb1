@@ -8,7 +8,7 @@ lfw/
 logs/
 model_data/
 .temp_miou_out/
-miou_out_multispectral/
+精度指标结果miou_out/
 .vscode/
 论文制图/
 # Byte-compiled / optimized / DLL files

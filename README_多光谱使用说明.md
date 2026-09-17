@@ -200,7 +200,7 @@ vis_bands = [3, 2, 1]
 多光谱评估脚本：
 
 ```bash
-python 多光谱get_miou.py
+python 计算精度指标多光谱get_miou.py
 ```
 
 它会：
@@ -208,7 +208,7 @@ python 多光谱get_miou.py
 ```text
 1. 读取 val.txt
 2. 读取 JPEGImages/xxx.tif
-3. 生成预测 mask 到 miou_out_multispectral/detection-results/
+3. 生成预测 mask 到 精度指标结果miou_out/detection-results/
 4. 与 SegmentationClass/xxx.png 计算 mIoU
 ```
 
